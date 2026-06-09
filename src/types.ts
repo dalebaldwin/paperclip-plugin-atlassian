@@ -4,7 +4,6 @@ export type SourceArtifactKind =
   | "jira_issue"
   | "jpd_item"
   | "confluence_page"
-  | "github_pr"
   | "storybook_build";
 
 export type SourceSurface =
@@ -12,9 +11,7 @@ export type SourceSurface =
   | "confluence_footer_comments"
   | "confluence_inline_comments"
   | "confluence_footer_comment_replies"
-  | "confluence_inline_comment_replies"
-  | "github_pr_comments"
-  | "github_review_threads";
+  | "confluence_inline_comment_replies";
 
 export type SourceCommentEventStatus =
   | "new"

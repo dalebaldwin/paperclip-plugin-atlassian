@@ -45,8 +45,6 @@ The model explicitly includes:
 - `confluence_inline_comments`
 - `confluence_footer_comment_replies`
 - `confluence_inline_comment_replies`
-- `github_pr_comments`
-- `github_review_threads`
 
 Nested replies are treated as required surfaces, not edge cases.
 

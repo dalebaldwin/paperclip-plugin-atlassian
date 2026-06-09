@@ -13,8 +13,6 @@ const KNOWN_SURFACES = new Set<SourceSurface>([
   "confluence_inline_comments",
   "confluence_footer_comment_replies",
   "confluence_inline_comment_replies",
-  "github_pr_comments",
-  "github_review_threads",
 ]);
 
 export function stableHash(value: string): string {
@@ -24,8 +22,7 @@ export function stableHash(value: string): string {
 export function isNestedCommentSurface(surface: SourceSurface): boolean {
   return (
     surface === "confluence_footer_comment_replies" ||
-    surface === "confluence_inline_comment_replies" ||
-    surface === "github_review_threads"
+    surface === "confluence_inline_comment_replies"
   );
 }
 
