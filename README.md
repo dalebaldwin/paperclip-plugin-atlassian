@@ -63,11 +63,18 @@ For local Paperclip development:
 
 ```bash
 pnpm dev
-paperclipai plugin install /Users/dalebaldwin/projects/paperclip-plugin-atlassian
+paperclipai plugin install <absolute-path-to-plugin>
 paperclipai plugin inspect paperclip.atlassian-source-intake
 ```
 
 If `paperclipai` is not on `PATH`, use `npx paperclipai`.
+
+For a published package install, use the package name instead of a local path:
+
+```bash
+paperclipai plugin install paperclip-plugin-atlassian
+paperclipai plugin inspect paperclip.atlassian-source-intake
+```
 
 ## Planned MVP
 

@@ -24,7 +24,7 @@
     "confluence",
     "connector"
   ],
-  "author": "Sojournii",
+  "author": "Dale Baldwin",
   "license": "MIT",
   "devDependencies": {
     "@paperclipai/plugin-sdk": "^2026.529.0",

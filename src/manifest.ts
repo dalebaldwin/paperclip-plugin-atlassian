@@ -7,7 +7,7 @@ const manifest: PaperclipPluginManifestV1 = {
   displayName: "Atlassian Source Intake",
   description:
     "Builds a canonical Jira/Confluence artifact graph and routes new source comments into Paperclip.",
-  author: "Sojournii",
+  author: "Dale Baldwin",
   categories: ["connector", "automation", "ui"],
   capabilities: [
     "api.routes.register",
