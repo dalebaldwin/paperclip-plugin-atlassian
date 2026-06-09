@@ -19,6 +19,70 @@ export type SourceCommentEventStatus =
   | "ignored"
   | "blocked";
 
+export type SourceArtifactLifecycleStatus =
+  | "registered"
+  | "active"
+  | "grace"
+  | "closed"
+  | "archived"
+  | "reopened";
+
+export interface SourceArtifactRef {
+  id?: string;
+  source?: SourceSystem;
+  artifactKind?: SourceArtifactKind;
+  externalId?: string;
+}
+
+export interface RegisterSourceArtifactInput {
+  companyId: string;
+  source: SourceSystem;
+  artifactKind: SourceArtifactKind;
+  externalId: string;
+  url?: string;
+  title?: string;
+  status?: SourceArtifactLifecycleStatus;
+  ownerLane?: string;
+  discoveredFrom?: string;
+}
+
+export interface RegisterSourceArtifactEdgeInput {
+  companyId: string;
+  from: SourceArtifactRef;
+  to: SourceArtifactRef;
+  relationship: string;
+}
+
+export interface RegisterSourceCommentSurfaceInput {
+  companyId: string;
+  artifact: SourceArtifactRef;
+  surface: SourceSurface;
+  cursorCommentId?: string;
+  cursorVersion?: string | number;
+  lastScanAt?: string;
+}
+
+export interface SetSourceArtifactLifecycleInput {
+  companyId: string;
+  artifact: SourceArtifactRef;
+  status: SourceArtifactLifecycleStatus;
+  reason?: string;
+}
+
+export interface ListActiveSurfacesInput {
+  companyId: string;
+  statuses?: SourceArtifactLifecycleStatus[];
+}
+
+export interface SourceSurfaceCoverageFinding {
+  artifactId: string;
+  source: SourceSystem;
+  artifactKind: SourceArtifactKind;
+  externalId: string;
+  title: string | null;
+  missingSurface: SourceSurface;
+}
+
 export interface SourceCommentEventInput {
   companyId: string;
   source: SourceSystem;

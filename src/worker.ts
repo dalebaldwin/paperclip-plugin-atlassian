@@ -11,9 +11,27 @@ import {
   parseAtlassianWebhook,
   stringField,
 } from "./intake.js";
-import type { NormalizedSourceCommentEvent, SourceCommentEventInput } from "./types.js";
-
-type JsonObject = Record<string, unknown>;
+import {
+  expectedSurfacesForArtifact,
+  normalizeArtifactInput,
+  normalizeEdgeInput,
+  normalizeLifecycleInput,
+  normalizeListActiveSurfacesInput,
+  normalizeSurfaceInput,
+} from "./registry.js";
+import type {
+  ListActiveSurfacesInput,
+  NormalizedSourceCommentEvent,
+  RegisterSourceArtifactEdgeInput,
+  RegisterSourceArtifactInput,
+  RegisterSourceCommentSurfaceInput,
+  SetSourceArtifactLifecycleInput,
+  SourceArtifactKind,
+  SourceArtifactLifecycleStatus,
+  SourceCommentEventInput,
+  SourceSurface,
+  SourceSystem,
+} from "./types.js";
 
 function table(namespace: string, name: string): string {
   return `${namespace}.${name}`;
@@ -49,6 +67,308 @@ async function upsertArtifact(
     throw new Error("source_artifacts upsert returned no id");
   }
   return id;
+}
+
+async function registerArtifact(
+  ctx: PluginContext,
+  input: RegisterSourceArtifactInput,
+) {
+  const artifact = normalizeArtifactInput(input);
+  const rows = await ctx.db.query<{
+    id: string;
+    company_id: string;
+    source: SourceSystem;
+    artifact_kind: SourceArtifactKind;
+    external_id: string;
+    url: string | null;
+    title: string | null;
+    status: string | null;
+    owner_lane: string | null;
+    discovered_from: string | null;
+  }>(
+    `INSERT INTO ${table(ctx.db.namespace, "source_artifacts")}
+      (company_id, source, artifact_kind, external_id, url, title, status, owner_lane, discovered_from, last_seen_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+     ON CONFLICT (company_id, source, artifact_kind, external_id)
+     DO UPDATE SET
+       url = COALESCE(EXCLUDED.url, ${table(ctx.db.namespace, "source_artifacts")}.url),
+       title = COALESCE(EXCLUDED.title, ${table(ctx.db.namespace, "source_artifacts")}.title),
+       status = EXCLUDED.status,
+       owner_lane = COALESCE(EXCLUDED.owner_lane, ${table(ctx.db.namespace, "source_artifacts")}.owner_lane),
+       discovered_from = COALESCE(EXCLUDED.discovered_from, ${table(ctx.db.namespace, "source_artifacts")}.discovered_from),
+       last_seen_at = now(),
+       updated_at = now()
+     RETURNING id, company_id, source, artifact_kind, external_id, url, title, status, owner_lane, discovered_from`,
+    [
+      artifact.companyId,
+      artifact.source,
+      artifact.artifactKind,
+      artifact.externalId,
+      artifact.url ?? null,
+      artifact.title ?? null,
+      artifact.status,
+      artifact.ownerLane ?? null,
+      artifact.discoveredFrom ?? null,
+    ],
+  );
+
+  const row = rows[0];
+  if (!row) {
+    throw new Error("source_artifacts registration returned no row");
+  }
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    source: row.source,
+    artifactKind: row.artifact_kind,
+    externalId: row.external_id,
+    url: row.url,
+    title: row.title,
+    status: row.status,
+    ownerLane: row.owner_lane,
+    discoveredFrom: row.discovered_from,
+  };
+}
+
+async function resolveArtifactId(
+  ctx: PluginContext,
+  companyId: string,
+  artifact: {
+    id?: string;
+    source?: SourceSystem;
+    artifactKind?: SourceArtifactKind;
+    externalId?: string;
+  },
+): Promise<string> {
+  if (artifact.id) {
+    const rows = await ctx.db.query<{ id: string }>(
+      `SELECT id
+       FROM ${table(ctx.db.namespace, "source_artifacts")}
+       WHERE id = $1 AND company_id = $2`,
+      [artifact.id, companyId],
+    );
+    if (rows[0]?.id) {
+      return rows[0].id;
+    }
+    throw new Error(`source artifact not found by id: ${artifact.id}`);
+  }
+
+  const rows = await ctx.db.query<{ id: string }>(
+    `SELECT id
+     FROM ${table(ctx.db.namespace, "source_artifacts")}
+     WHERE company_id = $1
+       AND source = $2
+       AND artifact_kind = $3
+       AND external_id = $4`,
+    [companyId, artifact.source, artifact.artifactKind, artifact.externalId],
+  );
+  if (rows[0]?.id) {
+    return rows[0].id;
+  }
+  throw new Error(
+    `source artifact not found: ${artifact.source}/${artifact.artifactKind}/${artifact.externalId}`,
+  );
+}
+
+async function registerArtifactEdge(
+  ctx: PluginContext,
+  input: RegisterSourceArtifactEdgeInput,
+) {
+  const edge = normalizeEdgeInput(input);
+  const fromId = await resolveArtifactId(ctx, edge.companyId, edge.from);
+  const toId = await resolveArtifactId(ctx, edge.companyId, edge.to);
+  const rows = await ctx.db.query<{
+    id: string;
+    from_artifact_id: string;
+    to_artifact_id: string;
+    relationship: string;
+  }>(
+    `INSERT INTO ${table(ctx.db.namespace, "source_artifact_edges")}
+      (company_id, from_artifact_id, to_artifact_id, relationship)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (from_artifact_id, to_artifact_id, relationship)
+     DO UPDATE SET updated_at = now()
+     RETURNING id, from_artifact_id, to_artifact_id, relationship`,
+    [edge.companyId, fromId, toId, edge.relationship],
+  );
+
+  const row = rows[0];
+  if (!row) {
+    throw new Error("source_artifact_edges registration returned no row");
+  }
+  return {
+    id: row.id,
+    companyId: edge.companyId,
+    fromArtifactId: row.from_artifact_id,
+    toArtifactId: row.to_artifact_id,
+    relationship: row.relationship,
+  };
+}
+
+async function registerCommentSurface(
+  ctx: PluginContext,
+  input: RegisterSourceCommentSurfaceInput,
+) {
+  const surface = normalizeSurfaceInput(input);
+  const artifactId = await resolveArtifactId(ctx, surface.companyId, surface.artifact);
+  const rows = await ctx.db.query<{
+    id: string;
+    artifact_id: string;
+    surface: SourceSurface;
+    cursor_comment_id: string | null;
+    cursor_version: string | null;
+  }>(
+    `INSERT INTO ${table(ctx.db.namespace, "source_comment_surfaces")}
+      (artifact_id, surface, cursor_comment_id, cursor_version, last_scan_at)
+     VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, now()))
+     ON CONFLICT (artifact_id, surface)
+     DO UPDATE SET
+       cursor_comment_id = COALESCE(EXCLUDED.cursor_comment_id, ${table(ctx.db.namespace, "source_comment_surfaces")}.cursor_comment_id),
+       cursor_version = COALESCE(EXCLUDED.cursor_version, ${table(ctx.db.namespace, "source_comment_surfaces")}.cursor_version),
+       last_scan_at = EXCLUDED.last_scan_at,
+       updated_at = now()
+     RETURNING id, artifact_id, surface, cursor_comment_id, cursor_version`,
+    [
+      artifactId,
+      surface.surface,
+      surface.cursorCommentId ?? null,
+      surface.cursorVersion ?? null,
+      surface.lastScanAt ?? null,
+    ],
+  );
+
+  const row = rows[0];
+  if (!row) {
+    throw new Error("source_comment_surfaces registration returned no row");
+  }
+  return {
+    id: row.id,
+    artifactId: row.artifact_id,
+    surface: row.surface,
+    cursorCommentId: row.cursor_comment_id,
+    cursorVersion: row.cursor_version,
+  };
+}
+
+async function setArtifactLifecycle(
+  ctx: PluginContext,
+  input: SetSourceArtifactLifecycleInput,
+) {
+  const lifecycle = normalizeLifecycleInput(input);
+  const artifactId = await resolveArtifactId(ctx, lifecycle.companyId, lifecycle.artifact);
+  const rows = await ctx.db.query<{
+    id: string;
+    status: string | null;
+    updated_at: string;
+  }>(
+    `UPDATE ${table(ctx.db.namespace, "source_artifacts")}
+     SET status = $1, updated_at = now()
+     WHERE id = $2 AND company_id = $3
+     RETURNING id, status, updated_at::text`,
+    [lifecycle.status, artifactId, lifecycle.companyId],
+  );
+  const row = rows[0];
+  if (!row) {
+    throw new Error("source artifact lifecycle update returned no row");
+  }
+  return {
+    id: row.id,
+    status: row.status,
+    updatedAt: row.updated_at,
+    reason: lifecycle.reason ?? null,
+  };
+}
+
+async function listActiveSurfaces(
+  ctx: PluginContext,
+  input: ListActiveSurfacesInput,
+) {
+  const params = normalizeListActiveSurfacesInput(input);
+  return ctx.db.query<{
+    artifact_id: string;
+    source: SourceSystem;
+    artifact_kind: SourceArtifactKind;
+    external_id: string;
+    title: string | null;
+    status: string | null;
+    surface_id: string;
+    surface: SourceSurface;
+    cursor_comment_id: string | null;
+    cursor_version: string | null;
+    last_scan_at: string | null;
+  }>(
+    `SELECT
+       a.id AS artifact_id,
+       a.source,
+       a.artifact_kind,
+       a.external_id,
+       a.title,
+       a.status,
+       s.id AS surface_id,
+       s.surface,
+       s.cursor_comment_id,
+       s.cursor_version,
+       s.last_scan_at::text
+     FROM ${table(ctx.db.namespace, "source_artifacts")} a
+     JOIN ${table(ctx.db.namespace, "source_comment_surfaces")} s
+       ON s.artifact_id = a.id
+     WHERE a.company_id = $1
+       AND COALESCE(a.status, 'registered') = ANY($2::text[])
+     ORDER BY a.source, a.artifact_kind, a.external_id, s.surface`,
+    [params.companyId, params.statuses],
+  );
+}
+
+async function coverageAudit(ctx: PluginContext, companyId: string) {
+  const rows = await ctx.db.query<{
+    artifact_id: string;
+    source: SourceSystem;
+    artifact_kind: SourceArtifactKind;
+    external_id: string;
+    title: string | null;
+    surfaces: SourceSurface[] | null;
+  }>(
+    `SELECT
+       a.id AS artifact_id,
+       a.source,
+       a.artifact_kind,
+       a.external_id,
+       a.title,
+       array_remove(array_agg(s.surface), NULL) AS surfaces
+     FROM ${table(ctx.db.namespace, "source_artifacts")} a
+     LEFT JOIN ${table(ctx.db.namespace, "source_comment_surfaces")} s
+       ON s.artifact_id = a.id
+     WHERE a.company_id = $1
+       AND COALESCE(a.status, 'registered') = ANY($2::text[])
+     GROUP BY a.id, a.source, a.artifact_kind, a.external_id, a.title
+     ORDER BY a.source, a.artifact_kind, a.external_id`,
+    [companyId, ["registered", "active", "grace", "reopened"]],
+  );
+
+  const findings = [];
+  for (const row of rows) {
+    const existing = new Set(row.surfaces ?? []);
+    for (const expected of expectedSurfacesForArtifact(
+      row.source,
+      row.artifact_kind,
+    )) {
+      if (!existing.has(expected)) {
+        findings.push({
+          artifactId: row.artifact_id,
+          source: row.source,
+          artifactKind: row.artifact_kind,
+          externalId: row.external_id,
+          title: row.title,
+          missingSurface: expected,
+        });
+      }
+    }
+  }
+
+  return {
+    checkedArtifacts: rows.length,
+    missingSurfaces: findings,
+  };
 }
 
 async function upsertSurface(
@@ -246,6 +566,46 @@ const plugin = definePlugin({
       return recordCommentEvent(ctx, params as unknown as SourceCommentEventInput);
     });
 
+    ctx.actions.register("register-artifact", async (params) => {
+      return registerArtifact(ctx, params as unknown as RegisterSourceArtifactInput);
+    });
+
+    ctx.actions.register("register-edge", async (params) => {
+      return registerArtifactEdge(
+        ctx,
+        params as unknown as RegisterSourceArtifactEdgeInput,
+      );
+    });
+
+    ctx.actions.register("register-surface", async (params) => {
+      return registerCommentSurface(
+        ctx,
+        params as unknown as RegisterSourceCommentSurfaceInput,
+      );
+    });
+
+    ctx.actions.register("set-lifecycle", async (params) => {
+      return setArtifactLifecycle(
+        ctx,
+        params as unknown as SetSourceArtifactLifecycleInput,
+      );
+    });
+
+    ctx.data.register("active-surfaces", async (params) => {
+      return listActiveSurfaces(
+        ctx,
+        params as unknown as ListActiveSurfacesInput,
+      );
+    });
+
+    ctx.data.register("coverage-audit", async (params) => {
+      const companyId = stringField(params.companyId);
+      if (!companyId) {
+        throw new Error("companyId is required");
+      }
+      return coverageAudit(ctx, companyId);
+    });
+
     ctx.data.register("status", async (params) => {
       return intakeStatus(ctx, stringField(params.companyId));
     });
@@ -286,6 +646,76 @@ const plugin = definePlugin({
       return { status: result.inserted ? 201 : 200, body: result };
     }
 
+    if (input.routeKey === "register-artifact") {
+      if (!isRecord(input.body)) {
+        return { status: 400, body: { error: "JSON object body required" } };
+      }
+      return {
+        status: 201,
+        body: await registerArtifact(
+          currentContext(),
+          input.body as unknown as RegisterSourceArtifactInput,
+        ),
+      };
+    }
+
+    if (input.routeKey === "register-edge") {
+      if (!isRecord(input.body)) {
+        return { status: 400, body: { error: "JSON object body required" } };
+      }
+      return {
+        status: 201,
+        body: await registerArtifactEdge(
+          currentContext(),
+          input.body as unknown as RegisterSourceArtifactEdgeInput,
+        ),
+      };
+    }
+
+    if (input.routeKey === "register-surface") {
+      if (!isRecord(input.body)) {
+        return { status: 400, body: { error: "JSON object body required" } };
+      }
+      return {
+        status: 201,
+        body: await registerCommentSurface(
+          currentContext(),
+          input.body as unknown as RegisterSourceCommentSurfaceInput,
+        ),
+      };
+    }
+
+    if (input.routeKey === "set-lifecycle") {
+      if (!isRecord(input.body)) {
+        return { status: 400, body: { error: "JSON object body required" } };
+      }
+      return {
+        body: await setArtifactLifecycle(
+          currentContext(),
+          input.body as unknown as SetSourceArtifactLifecycleInput,
+        ),
+      };
+    }
+
+    if (input.routeKey === "active-surfaces") {
+      return {
+        body: await listActiveSurfaces(currentContext(), {
+          companyId: stringField(input.query.companyId) ?? "",
+          statuses: queryList(input.query.status),
+        }),
+      };
+    }
+
+    if (input.routeKey === "coverage-audit") {
+      const companyId = stringField(input.query.companyId);
+      if (!companyId) {
+        return { status: 400, body: { error: "companyId is required" } };
+      }
+      return {
+        body: await coverageAudit(currentContext(), companyId),
+      };
+    }
+
     return { status: 404, body: { error: `Unknown route ${input.routeKey}` } };
   },
 
@@ -317,6 +747,19 @@ function currentContext(): PluginContext {
     throw new Error("Plugin context is not ready");
   }
   return setupContext;
+}
+
+function queryList(
+  value: string | string[] | undefined,
+): SourceArtifactLifecycleStatus[] | undefined {
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => item.split(","))
+      .filter(Boolean) as SourceArtifactLifecycleStatus[];
+  }
+  return value?.split(",").filter(Boolean) as
+    | SourceArtifactLifecycleStatus[]
+    | undefined;
 }
 
 export default plugin;

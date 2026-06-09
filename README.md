@@ -48,6 +48,43 @@ The model explicitly includes:
 
 Nested replies are treated as required surfaces, not edge cases.
 
+## Agent-Facing Registry Contract
+
+Agents and orchestration routines should register what they create or discover
+instead of relying on later prompt heuristics.
+
+Supported plugin actions and matching API routes:
+
+- `register-artifact` / `POST /artifacts`
+- `register-edge` / `POST /artifact-edges`
+- `register-surface` / `POST /comment-surfaces`
+- `set-lifecycle` / `POST /artifact-lifecycle`
+- `active-surfaces` / `GET /active-surfaces`
+- `coverage-audit` / `GET /coverage-audit`
+
+Example flow:
+
+```text
+Tech spec created
+  -> register Jira Epic artifact
+  -> register Confluence page artifact
+  -> register edge: Jira Epic -> Confluence tech spec
+  -> register footer, inline, footer-reply, and inline-reply comment surfaces
+```
+
+Lifecycle states:
+
+- `registered`
+- `active`
+- `grace`
+- `closed`
+- `archived`
+- `reopened`
+
+Hourly scans should read `registered`, `active`, `grace`, and `reopened`
+surfaces. `closed` and `archived` surfaces should not receive routine polling,
+but webhook events can still reopen them.
+
 ## Development
 
 ```bash
