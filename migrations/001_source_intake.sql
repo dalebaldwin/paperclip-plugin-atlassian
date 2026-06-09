@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS plugin_atlassian_source_intake_542f4a73ee.source_comm
   UNIQUE (company_id, source, surface, external_comment_id, version)
 );
 
-CREATE INDEX IF NOT EXISTS plugin_atlassian_source_intake_542f4a73ee.source_comment_events_status_idx
+CREATE INDEX IF NOT EXISTS source_comment_events_status_idx
   ON plugin_atlassian_source_intake_542f4a73ee.source_comment_events (company_id, status, created_at);
 
 CREATE TABLE IF NOT EXISTS plugin_atlassian_source_intake_542f4a73ee.webhook_deliveries (
