@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS source_artifacts (
+CREATE TABLE IF NOT EXISTS atlassian_source_intake.source_artifacts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id text NOT NULL,
   source text NOT NULL,
@@ -15,20 +15,20 @@ CREATE TABLE IF NOT EXISTS source_artifacts (
   UNIQUE (company_id, source, artifact_kind, external_id)
 );
 
-CREATE TABLE IF NOT EXISTS source_artifact_edges (
+CREATE TABLE IF NOT EXISTS atlassian_source_intake.source_artifact_edges (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id text NOT NULL,
-  from_artifact_id uuid NOT NULL REFERENCES source_artifacts(id) ON DELETE CASCADE,
-  to_artifact_id uuid NOT NULL REFERENCES source_artifacts(id) ON DELETE CASCADE,
+  from_artifact_id uuid NOT NULL REFERENCES atlassian_source_intake.source_artifacts(id) ON DELETE CASCADE,
+  to_artifact_id uuid NOT NULL REFERENCES atlassian_source_intake.source_artifacts(id) ON DELETE CASCADE,
   relationship text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (from_artifact_id, to_artifact_id, relationship)
 );
 
-CREATE TABLE IF NOT EXISTS source_comment_surfaces (
+CREATE TABLE IF NOT EXISTS atlassian_source_intake.source_comment_surfaces (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  artifact_id uuid NOT NULL REFERENCES source_artifacts(id) ON DELETE CASCADE,
+  artifact_id uuid NOT NULL REFERENCES atlassian_source_intake.source_artifacts(id) ON DELETE CASCADE,
   surface text NOT NULL,
   cursor_comment_id text,
   cursor_version text,
@@ -39,11 +39,11 @@ CREATE TABLE IF NOT EXISTS source_comment_surfaces (
   UNIQUE (artifact_id, surface)
 );
 
-CREATE TABLE IF NOT EXISTS source_comment_events (
+CREATE TABLE IF NOT EXISTS atlassian_source_intake.source_comment_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id text NOT NULL,
-  artifact_id uuid NOT NULL REFERENCES source_artifacts(id) ON DELETE CASCADE,
-  surface_id uuid NOT NULL REFERENCES source_comment_surfaces(id) ON DELETE CASCADE,
+  artifact_id uuid NOT NULL REFERENCES atlassian_source_intake.source_artifacts(id) ON DELETE CASCADE,
+  surface_id uuid NOT NULL REFERENCES atlassian_source_intake.source_comment_surfaces(id) ON DELETE CASCADE,
   source text NOT NULL,
   surface text NOT NULL,
   external_comment_id text NOT NULL,
@@ -64,10 +64,10 @@ CREATE TABLE IF NOT EXISTS source_comment_events (
   UNIQUE (company_id, source, surface, external_comment_id, version)
 );
 
-CREATE INDEX IF NOT EXISTS source_comment_events_status_idx
-  ON source_comment_events (company_id, status, created_at);
+CREATE INDEX IF NOT EXISTS atlassian_source_intake.source_comment_events_status_idx
+  ON atlassian_source_intake.source_comment_events (company_id, status, created_at);
 
-CREATE TABLE IF NOT EXISTS webhook_deliveries (
+CREATE TABLE IF NOT EXISTS atlassian_source_intake.webhook_deliveries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   request_id text NOT NULL UNIQUE,
   endpoint_key text NOT NULL,
