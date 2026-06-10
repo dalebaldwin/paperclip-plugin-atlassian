@@ -1,11 +1,24 @@
 import type { PluginContext } from "@paperclipai/plugin-sdk";
-import type { SourceCommentEventInput } from "./types.js";
+import type {
+  SourceArtifactKind,
+  SourceCommentEventInput,
+  SourceSurface,
+} from "./types.js";
 
 type RecordCommentEvent = (input: SourceCommentEventInput) => Promise<unknown>;
+type JiraArtifactKind = Extract<SourceArtifactKind, "jira_issue" | "jpd_item">;
+type ConfluenceCommentSurface = Extract<
+  SourceSurface,
+  | "confluence_footer_comments"
+  | "confluence_inline_comments"
+  | "confluence_footer_comment_replies"
+  | "confluence_inline_comment_replies"
+>;
 
 export type BackfillJiraIssueInput = {
   companyId: string;
   issueKey: string;
+  artifactKind?: JiraArtifactKind;
 };
 
 export type BackfillConfluencePageInput = {
@@ -13,6 +26,7 @@ export type BackfillConfluencePageInput = {
   pageId: string;
   includeChildren?: boolean;
   maxChildPages?: number;
+  maxCommentDepth?: number;
 };
 
 type BackfillResult = {
@@ -45,11 +59,12 @@ export async function backfillJiraIssue(
 
   const issue = await fetchJson<Record<string, unknown>>(
     ctx,
-    `${trimSlash(jiraBaseUrl)}/rest/api/3/issue/${encodeURIComponent(issueKey)}?fields=summary,issuetype`,
+    `${trimSlash(jiraBaseUrl)}/rest/api/3/issue/${encodeURIComponent(issueKey)}?fields=summary,issuetype,project`,
     auth,
   );
   const fields = recordValue(issue.fields);
   const summary = stringValue(fields.summary) ?? issueKey;
+  const artifactKind = inferJiraArtifactKind(issue, input.artifactKind);
   const comments = await fetchJiraComments(ctx, jiraBaseUrl, issueKey, auth);
 
   let recordedEvents = 0;
@@ -58,7 +73,7 @@ export async function backfillJiraIssue(
     await record({
       companyId,
       source: "jira",
-      artifactKind: "jira_issue",
+      artifactKind,
       artifactExternalId: issueKey,
       artifactUrl: `${trimSlash(jiraBaseUrl)}/browse/${encodeURIComponent(issueKey)}`,
       artifactTitle: summary,
@@ -91,11 +106,14 @@ export async function backfillConfluencePage(
   const companyId = required(input.companyId, "companyId");
   const pageId = required(input.pageId, "pageId");
   const { config, auth } = await atlassianContext(ctx);
-  const confluenceBaseUrl = required(config.confluenceBaseUrl, "confluenceBaseUrl");
+  const confluenceBaseUrl = confluenceSiteBaseUrl(
+    required(config.confluenceBaseUrl, "confluenceBaseUrl"),
+  );
+  const maxCommentDepth = Math.max(0, Math.min(input.maxCommentDepth ?? 10, 25));
 
   const result = await backfillSingleConfluencePage(
     ctx,
-    { companyId, pageId, confluenceBaseUrl, auth },
+    { companyId, pageId, confluenceBaseUrl, auth, maxCommentDepth },
     record,
   );
 
@@ -114,7 +132,7 @@ export async function backfillConfluencePage(
       if (!childId) continue;
       await backfillSingleConfluencePage(
         ctx,
-        { companyId, pageId: childId, confluenceBaseUrl, auth },
+        { companyId, pageId: childId, confluenceBaseUrl, auth, maxCommentDepth },
         record,
       );
       scannedChildren += 1;
@@ -134,10 +152,11 @@ async function backfillSingleConfluencePage(
     pageId: string;
     confluenceBaseUrl: string;
     auth: RequestAuth;
+    maxCommentDepth: number;
   },
   record: RecordCommentEvent,
 ): Promise<BackfillResult> {
-  const baseUrl = trimSlash(input.confluenceBaseUrl);
+  const baseUrl = confluenceSiteBaseUrl(input.confluenceBaseUrl);
   const page = await fetchJson<Record<string, unknown>>(
     ctx,
     `${baseUrl}/wiki/api/v2/pages/${encodeURIComponent(input.pageId)}`,
@@ -151,63 +170,36 @@ async function backfillSingleConfluencePage(
     `/wiki/api/v2/pages/${encodeURIComponent(input.pageId)}/footer-comments?body-format=storage&limit=50`,
     input.auth,
   );
-  const inlineComments = await fetchConfluenceComments(
+  const inlineComments = await fetchConfluenceInlineComments(
     ctx,
     baseUrl,
-    `/wiki/api/v2/pages/${encodeURIComponent(input.pageId)}/inline-comments?body-format=storage&limit=50`,
+    input.pageId,
     input.auth,
-    true,
   );
 
   let recordedEvents = 0;
   for (const comment of footerComments) {
-    recordedEvents += await recordConfluenceComment(ctx, input, record, {
+    recordedEvents += await recordConfluenceCommentTree(ctx, input, record, {
       comment,
       surface: "confluence_footer_comments",
       pageTitle,
       pageUrl,
-    });
-    const children = await fetchConfluenceComments(
-      ctx,
       baseUrl,
-      `/wiki/api/v2/footer-comments/${encodeURIComponent(required(stringValue(comment.id), "comment.id"))}/children?body-format=storage&limit=50`,
-      input.auth,
-      true,
-    );
-    for (const child of children) {
-      recordedEvents += await recordConfluenceComment(ctx, input, record, {
-        comment: child,
-        parentCommentId: stringValue(comment.id) ?? undefined,
-        surface: "confluence_footer_comment_replies",
-        pageTitle,
-        pageUrl,
-      });
-    }
+      depth: 0,
+      maxDepth: input.maxCommentDepth,
+    });
   }
 
   for (const comment of inlineComments) {
-    recordedEvents += await recordConfluenceComment(ctx, input, record, {
+    recordedEvents += await recordConfluenceCommentTree(ctx, input, record, {
       comment,
       surface: "confluence_inline_comments",
       pageTitle,
       pageUrl,
-    });
-    const children = await fetchConfluenceComments(
-      ctx,
       baseUrl,
-      `/wiki/api/v2/inline-comments/${encodeURIComponent(required(stringValue(comment.id), "comment.id"))}/children?body-format=storage&limit=50`,
-      input.auth,
-      true,
-    );
-    for (const child of children) {
-      recordedEvents += await recordConfluenceComment(ctx, input, record, {
-        comment: child,
-        parentCommentId: stringValue(comment.id) ?? undefined,
-        surface: "confluence_inline_comment_replies",
-        pageTitle,
-        pageUrl,
-      });
-    }
+      depth: 0,
+      maxDepth: input.maxCommentDepth,
+    });
   }
 
   return {
@@ -222,6 +214,55 @@ async function backfillSingleConfluencePage(
   };
 }
 
+async function recordConfluenceCommentTree(
+  ctx: PluginContext,
+  input: {
+    companyId: string;
+    pageId: string;
+    auth: RequestAuth;
+  },
+  record: RecordCommentEvent,
+  options: {
+    comment: Record<string, unknown>;
+    surface: ConfluenceCommentSurface;
+    parentCommentId?: string;
+    pageTitle: string;
+    pageUrl: string | null;
+    baseUrl: string;
+    depth: number;
+    maxDepth: number;
+  },
+) {
+  const id = required(stringValue(options.comment.id), "comment.id");
+  let recorded = await recordConfluenceComment(ctx, input, record, options);
+  if (options.depth >= options.maxDepth) {
+    return recorded;
+  }
+
+  const replySurface = confluenceReplySurfaceFor(options.surface);
+  const children = await fetchConfluenceComments(
+    ctx,
+    options.baseUrl,
+    confluenceCommentChildrenPath(options.surface, id),
+    input.auth,
+    true,
+  );
+  for (const child of children) {
+    recorded += await recordConfluenceCommentTree(ctx, input, record, {
+      comment: child,
+      parentCommentId: id,
+      surface: replySurface,
+      pageTitle: options.pageTitle,
+      pageUrl: options.pageUrl,
+      baseUrl: options.baseUrl,
+      depth: options.depth + 1,
+      maxDepth: options.maxDepth,
+    });
+  }
+
+  return recorded;
+}
+
 async function recordConfluenceComment(
   _ctx: PluginContext,
   input: {
@@ -231,11 +272,7 @@ async function recordConfluenceComment(
   record: RecordCommentEvent,
   options: {
     comment: Record<string, unknown>;
-    surface:
-      | "confluence_footer_comments"
-      | "confluence_inline_comments"
-      | "confluence_footer_comment_replies"
-      | "confluence_inline_comment_replies";
+    surface: ConfluenceCommentSurface;
     parentCommentId?: string;
     pageTitle: string;
     pageUrl: string | null;
@@ -267,6 +304,60 @@ async function recordConfluenceComment(
     raw: options.comment,
   });
   return 1;
+}
+
+export function inferJiraArtifactKind(
+  issue: unknown,
+  explicit?: JiraArtifactKind,
+): JiraArtifactKind {
+  if (explicit === "jira_issue" || explicit === "jpd_item") {
+    return explicit;
+  }
+
+  const fields = recordValue(recordValue(issue).fields);
+  const issueTypeName =
+    stringValue(recordValue(fields.issuetype).name)?.toLowerCase() ?? "";
+  const projectTypeKey =
+    stringValue(recordValue(fields.project).projectTypeKey)?.toLowerCase() ?? "";
+
+  if (
+    issueTypeName === "idea" ||
+    issueTypeName.includes("product discovery") ||
+    issueTypeName.includes("jpd") ||
+    projectTypeKey === "product_discovery"
+  ) {
+    return "jpd_item";
+  }
+
+  return "jira_issue";
+}
+
+export function confluenceReplySurfaceFor(
+  surface: ConfluenceCommentSurface,
+): ConfluenceCommentSurface {
+  if (
+    surface === "confluence_inline_comments" ||
+    surface === "confluence_inline_comment_replies"
+  ) {
+    return "confluence_inline_comment_replies";
+  }
+  return "confluence_footer_comment_replies";
+}
+
+export function confluenceSiteBaseUrl(value: string): string {
+  return trimSlash(value).replace(/\/wiki$/, "");
+}
+
+function confluenceCommentChildrenPath(
+  surface: ConfluenceCommentSurface,
+  commentId: string,
+) {
+  const commentType =
+    surface === "confluence_inline_comments" ||
+    surface === "confluence_inline_comment_replies"
+      ? "inline-comments"
+      : "footer-comments";
+  return `/wiki/api/v2/${commentType}/${encodeURIComponent(commentId)}/children?body-format=storage&limit=50`;
 }
 
 async function atlassianContext(ctx: PluginContext) {
@@ -329,6 +420,38 @@ async function fetchConfluenceComments(
   return comments;
 }
 
+async function fetchConfluenceInlineComments(
+  ctx: PluginContext,
+  baseUrl: string,
+  pageId: string,
+  auth: RequestAuth,
+) {
+  const encodedPageId = encodeURIComponent(pageId);
+  const paths = [
+    `/wiki/api/v2/pages/${encodedPageId}/inline-comments?body-format=storage&limit=50`,
+    ...["open", "resolved", "dangling", "reopened"].map(
+      (status) =>
+        `/wiki/api/v2/pages/${encodedPageId}/inline-comments?body-format=storage&limit=50&resolution-status=${status}`,
+    ),
+  ];
+  const commentsById = new Map<string, Record<string, unknown>>();
+  const unkeyedComments: Record<string, unknown>[] = [];
+
+  for (const path of paths) {
+    const comments = await fetchConfluenceComments(ctx, baseUrl, path, auth, true);
+    for (const comment of comments) {
+      const id = stringValue(comment.id);
+      if (id) {
+        commentsById.set(id, comment);
+      } else {
+        unkeyedComments.push(comment);
+      }
+    }
+  }
+
+  return [...commentsById.values(), ...unkeyedComments];
+}
+
 async function fetchConfluenceChildPages(
   ctx: PluginContext,
   baseUrl: string,
@@ -370,7 +493,7 @@ async function fetchJson<T>(
       Authorization: auth.authorization,
     },
   });
-  if (optional && response.status === 404) {
+  if (optional && (response.status === 400 || response.status === 404)) {
     return null as T;
   }
   if (!response.ok) {

@@ -98,6 +98,48 @@ const buttonRowStyle: React.CSSProperties = {
   flexWrap: "wrap",
 };
 
+const fieldRowStyle: React.CSSProperties = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  alignItems: "center",
+};
+
+const inputStyle: React.CSSProperties = {
+  minWidth: 180,
+  border: "1px solid #cbd5e1",
+  borderRadius: 6,
+  padding: "8px 10px",
+  fontSize: 13,
+  background: "#ffffff",
+  color: "#0f172a",
+};
+
+const checkboxLabelStyle: React.CSSProperties = {
+  display: "flex",
+  gap: 6,
+  alignItems: "center",
+  fontSize: 13,
+};
+
+function controlButtonStyle(
+  disabled: boolean,
+  variant: "primary" | "secondary" = "primary",
+): React.CSSProperties {
+  const primary = variant === "primary";
+  return {
+    border: `1px solid ${primary ? "#1d4ed8" : "#cbd5e1"}`,
+    borderRadius: 6,
+    padding: "8px 12px",
+    fontSize: 13,
+    fontWeight: 600,
+    background: primary ? "#2563eb" : "#ffffff",
+    color: primary ? "#ffffff" : "#0f172a",
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.55 : 1,
+  };
+}
+
 function formatCounts(counts: Record<string, number>) {
   return (
     Object.entries(counts)
@@ -214,16 +256,18 @@ function BackfillControls() {
   return (
     <section style={sectionStyle}>
       <h2>Backfill Inputs</h2>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div style={fieldRowStyle}>
         <input
           aria-label="Jira issue key"
           placeholder="SJI-1216"
+          style={inputStyle}
           value={issueKey}
           onChange={(event) => setIssueKey(event.currentTarget.value)}
         />
         <button
           type="button"
           disabled={busy || !issueKey.trim()}
+          style={controlButtonStyle(busy || !issueKey.trim())}
           onClick={() =>
             run(
               backfillJiraIssue({
@@ -236,15 +280,33 @@ function BackfillControls() {
         >
           Backfill Jira issue
         </button>
+        <button
+          type="button"
+          disabled={busy || !issueKey.trim()}
+          style={controlButtonStyle(busy || !issueKey.trim(), "secondary")}
+          onClick={() =>
+            run(
+              backfillJiraIssue({
+                companyId: host.companyId,
+                issueKey,
+                artifactKind: "jpd_item",
+              }),
+              "JPD item backfill completed.",
+            )
+          }
+        >
+          Backfill JPD item
+        </button>
       </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div style={fieldRowStyle}>
         <input
           aria-label="Confluence page id"
           placeholder="Confluence page id"
+          style={inputStyle}
           value={pageId}
           onChange={(event) => setPageId(event.currentTarget.value)}
         />
-        <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <label style={checkboxLabelStyle}>
           <input
             type="checkbox"
             checked={includeChildren}
@@ -255,6 +317,7 @@ function BackfillControls() {
         <button
           type="button"
           disabled={busy || !pageId.trim()}
+          style={controlButtonStyle(busy || !pageId.trim())}
           onClick={() =>
             run(
               backfillConfluencePage({
@@ -262,6 +325,7 @@ function BackfillControls() {
                 pageId,
                 includeChildren,
                 maxChildPages: 25,
+                maxCommentDepth: 10,
               }),
               "Confluence page backfill completed.",
             )
@@ -274,6 +338,7 @@ function BackfillControls() {
         <button
           type="button"
           disabled={busy}
+          style={controlButtonStyle(busy, "secondary")}
           onClick={() =>
             run(
               reconcileActiveSurfaces({ companyId: host.companyId }),
