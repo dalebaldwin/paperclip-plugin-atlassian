@@ -1,9 +1,11 @@
 import * as React from "react";
 import {
   useHostContext,
+  useHostNavigation,
   usePluginAction,
   usePluginData,
 } from "@paperclipai/plugin-sdk/ui";
+import type { PluginSidebarProps } from "@paperclipai/plugin-sdk/ui";
 
 type StatusData = {
   artifactCount: number;
@@ -146,6 +148,46 @@ function StatusSummary() {
         <div>{formatCounts(data.webhookDeliveryCounts)}</div>
       </div>
     </div>
+  );
+}
+
+export function AtlassianSidebarLink({ context }: PluginSidebarProps) {
+  const hostNavigation = useHostNavigation();
+  const href = hostNavigation.resolveHref("/atlassian-intake");
+  const isActive =
+    typeof window !== "undefined" && window.location.pathname === href;
+
+  if (!context.companyId) {
+    return null;
+  }
+
+  return (
+    <a
+      {...hostNavigation.linkProps("/atlassian-intake")}
+      aria-current={isActive ? "page" : undefined}
+      className={[
+        "flex items-center gap-2.5 px-3 py-2 pointer-coarse:py-1.5 text-[13px] font-medium transition-colors",
+        isActive
+          ? "bg-accent text-foreground"
+          : "text-foreground/80 hover:bg-accent/50 hover:text-foreground",
+      ].join(" ")}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        className="h-4 w-4 shrink-0"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v6A2.5 2.5 0 0 1 17.5 16H10l-4 3v-3.2A2.5 2.5 0 0 1 4 13.3Z" />
+        <path d="M8 9h8" />
+        <path d="M8 12h5" />
+      </svg>
+      <span className="flex-1 truncate">Atlassian Intake</span>
+    </a>
   );
 }
 
