@@ -5,7 +5,12 @@ import {
   parseAtlassianWebhook,
   stableHash,
 } from "../src/intake.js";
-import { extractText } from "../src/backfill.js";
+import {
+  confluenceReplySurfaceFor,
+  confluenceSiteBaseUrl,
+  extractText,
+  inferJiraArtifactKind,
+} from "../src/backfill.js";
 
 describe("source comment intake", () => {
   it("normalizes top-level Jira comments", () => {
@@ -87,5 +92,53 @@ describe("source comment intake", () => {
         storage: { value: "<p>Inline reply <strong>needed</strong></p>" },
       }),
     ).toBe("Inline reply needed");
+  });
+
+  it("infers Jira Product Discovery artifacts from issue type names", () => {
+    expect(
+      inferJiraArtifactKind({
+        fields: { issuetype: { name: "Idea" } },
+      }),
+    ).toBe("jpd_item");
+
+    expect(
+      inferJiraArtifactKind({
+        fields: { issuetype: { name: "Story" } },
+      }),
+    ).toBe("jira_issue");
+
+    expect(
+      inferJiraArtifactKind(
+        { fields: { issuetype: { name: "Story" } } },
+        "jpd_item",
+      ),
+    ).toBe("jpd_item");
+  });
+
+  it("maps Confluence comment surfaces to nested reply surfaces", () => {
+    expect(confluenceReplySurfaceFor("confluence_footer_comments")).toBe(
+      "confluence_footer_comment_replies",
+    );
+    expect(confluenceReplySurfaceFor("confluence_footer_comment_replies")).toBe(
+      "confluence_footer_comment_replies",
+    );
+    expect(confluenceReplySurfaceFor("confluence_inline_comments")).toBe(
+      "confluence_inline_comment_replies",
+    );
+    expect(confluenceReplySurfaceFor("confluence_inline_comment_replies")).toBe(
+      "confluence_inline_comment_replies",
+    );
+  });
+
+  it("normalizes Confluence URLs to the Atlassian site origin for v2 API paths", () => {
+    expect(confluenceSiteBaseUrl("https://example.atlassian.net/wiki")).toBe(
+      "https://example.atlassian.net",
+    );
+    expect(confluenceSiteBaseUrl("https://example.atlassian.net/wiki/")).toBe(
+      "https://example.atlassian.net",
+    );
+    expect(confluenceSiteBaseUrl("https://example.atlassian.net")).toBe(
+      "https://example.atlassian.net",
+    );
   });
 });
