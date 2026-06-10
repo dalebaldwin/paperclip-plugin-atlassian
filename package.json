@@ -1,6 +1,6 @@
 {
   "name": "paperclip-plugin-atlassian",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "type": "module",
   "description": "Reliable Jira and Confluence source-comment intake for Paperclip.",
   "scripts": {

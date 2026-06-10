@@ -149,6 +149,104 @@ function StatusSummary() {
   );
 }
 
+function BackfillControls() {
+  const host = useHostContext();
+  const backfillJiraIssue = usePluginAction("backfill-jira-issue");
+  const backfillConfluencePage = usePluginAction("backfill-confluence-page");
+  const reconcileActiveSurfaces = usePluginAction("reconcile-active-surfaces");
+  const [issueKey, setIssueKey] = React.useState("");
+  const [pageId, setPageId] = React.useState("");
+  const [includeChildren, setIncludeChildren] = React.useState(true);
+  const [message, setMessage] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  function run(action: Promise<unknown>, success: string) {
+    setBusy(true);
+    setMessage("");
+    action
+      .then(() => setMessage(success))
+      .catch(() => setMessage("Backfill failed. Check plugin logs and credentials."))
+      .finally(() => setBusy(false));
+  }
+
+  return (
+    <section style={sectionStyle}>
+      <h2>Backfill Inputs</h2>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input
+          aria-label="Jira issue key"
+          placeholder="SJI-1216"
+          value={issueKey}
+          onChange={(event) => setIssueKey(event.currentTarget.value)}
+        />
+        <button
+          type="button"
+          disabled={busy || !issueKey.trim()}
+          onClick={() =>
+            run(
+              backfillJiraIssue({
+                companyId: host.companyId,
+                issueKey,
+              }),
+              "Jira issue backfill completed.",
+            )
+          }
+        >
+          Backfill Jira issue
+        </button>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input
+          aria-label="Confluence page id"
+          placeholder="Confluence page id"
+          value={pageId}
+          onChange={(event) => setPageId(event.currentTarget.value)}
+        />
+        <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input
+            type="checkbox"
+            checked={includeChildren}
+            onChange={(event) => setIncludeChildren(event.currentTarget.checked)}
+          />
+          Include child pages
+        </label>
+        <button
+          type="button"
+          disabled={busy || !pageId.trim()}
+          onClick={() =>
+            run(
+              backfillConfluencePage({
+                companyId: host.companyId,
+                pageId,
+                includeChildren,
+                maxChildPages: 25,
+              }),
+              "Confluence page backfill completed.",
+            )
+          }
+        >
+          Backfill Confluence page
+        </button>
+      </div>
+      <div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            run(
+              reconcileActiveSurfaces({ companyId: host.companyId }),
+              "Active Atlassian surface reconciliation completed.",
+            )
+          }
+        >
+          Reconcile active surfaces
+        </button>
+      </div>
+      {message ? <p>{message}</p> : null}
+    </section>
+  );
+}
+
 function LifecycleButtons({
   artifact,
   onResult,
@@ -400,6 +498,7 @@ export function AtlassianIntakePage() {
     <main style={pageStyle}>
       <h1>Atlassian Source Intake</h1>
       <StatusSummary />
+      <BackfillControls />
       <TrackedArtifacts />
       <CoverageGaps />
       <RecentEvents />
