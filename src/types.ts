@@ -74,6 +74,25 @@ export interface ListActiveSurfacesInput {
   statuses?: SourceArtifactLifecycleStatus[];
 }
 
+export interface ListTrackedArtifactsInput {
+  companyId: string;
+  statuses?: SourceArtifactLifecycleStatus[];
+}
+
+export interface ListSourceCommentEventsInput {
+  companyId: string;
+  artifactId?: string;
+  status?: SourceCommentEventStatus;
+  limit?: number;
+}
+
+export interface SetSourceCommentEventStatusInput {
+  companyId: string;
+  eventId: string;
+  status: SourceCommentEventStatus;
+  reason?: string;
+}
+
 export interface SourceSurfaceCoverageFinding {
   artifactId: string;
   source: SourceSystem;
