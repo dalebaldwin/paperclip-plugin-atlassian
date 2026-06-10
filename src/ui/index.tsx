@@ -98,48 +98,6 @@ const buttonRowStyle: React.CSSProperties = {
   flexWrap: "wrap",
 };
 
-const fieldRowStyle: React.CSSProperties = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-  alignItems: "center",
-};
-
-const inputStyle: React.CSSProperties = {
-  minWidth: 180,
-  border: "1px solid #cbd5e1",
-  borderRadius: 6,
-  padding: "8px 10px",
-  fontSize: 13,
-  background: "#ffffff",
-  color: "#0f172a",
-};
-
-const checkboxLabelStyle: React.CSSProperties = {
-  display: "flex",
-  gap: 6,
-  alignItems: "center",
-  fontSize: 13,
-};
-
-function controlButtonStyle(
-  disabled: boolean,
-  variant: "primary" | "secondary" = "primary",
-): React.CSSProperties {
-  const primary = variant === "primary";
-  return {
-    border: `1px solid ${primary ? "#1d4ed8" : "#cbd5e1"}`,
-    borderRadius: 6,
-    padding: "8px 12px",
-    fontSize: 13,
-    fontWeight: 600,
-    background: primary ? "#2563eb" : "#ffffff",
-    color: primary ? "#ffffff" : "#0f172a",
-    cursor: disabled ? "not-allowed" : "pointer",
-    opacity: disabled ? 0.55 : 1,
-  };
-}
-
 function formatCounts(counts: Record<string, number>) {
   return (
     Object.entries(counts)
@@ -232,123 +190,20 @@ export function AtlassianSidebarLink({ context }: PluginSidebarProps) {
   );
 }
 
-function BackfillControls() {
-  const host = useHostContext();
-  const backfillJiraIssue = usePluginAction("backfill-jira-issue");
-  const backfillConfluencePage = usePluginAction("backfill-confluence-page");
-  const reconcileActiveSurfaces = usePluginAction("reconcile-active-surfaces");
-  const [issueKey, setIssueKey] = React.useState("");
-  const [pageId, setPageId] = React.useState("");
-  const [includeChildren, setIncludeChildren] = React.useState(true);
-  const [message, setMessage] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-
-  function run(action: Promise<unknown>, success: string) {
-    setBusy(true);
-    setMessage("");
-    action
-      .then(() => setMessage(success))
-      .catch(() => setMessage("Backfill failed. Check plugin logs and credentials."))
-      .finally(() => setBusy(false));
-  }
-
+function AgentSyncContract() {
   return (
     <section style={sectionStyle}>
-      <h2>Backfill Inputs</h2>
-      <div style={fieldRowStyle}>
-        <input
-          aria-label="Jira issue key"
-          placeholder="SJI-1216"
-          style={inputStyle}
-          value={issueKey}
-          onChange={(event) => setIssueKey(event.currentTarget.value)}
-        />
-        <button
-          type="button"
-          disabled={busy || !issueKey.trim()}
-          style={controlButtonStyle(busy || !issueKey.trim())}
-          onClick={() =>
-            run(
-              backfillJiraIssue({
-                companyId: host.companyId,
-                issueKey,
-              }),
-              "Jira issue backfill completed.",
-            )
-          }
-        >
-          Backfill Jira issue
-        </button>
-        <button
-          type="button"
-          disabled={busy || !issueKey.trim()}
-          style={controlButtonStyle(busy || !issueKey.trim(), "secondary")}
-          onClick={() =>
-            run(
-              backfillJiraIssue({
-                companyId: host.companyId,
-                issueKey,
-                artifactKind: "jpd_item",
-              }),
-              "JPD item backfill completed.",
-            )
-          }
-        >
-          Backfill JPD item
-        </button>
-      </div>
-      <div style={fieldRowStyle}>
-        <input
-          aria-label="Confluence page id"
-          placeholder="Confluence page id"
-          style={inputStyle}
-          value={pageId}
-          onChange={(event) => setPageId(event.currentTarget.value)}
-        />
-        <label style={checkboxLabelStyle}>
-          <input
-            type="checkbox"
-            checked={includeChildren}
-            onChange={(event) => setIncludeChildren(event.currentTarget.checked)}
-          />
-          Include child pages
-        </label>
-        <button
-          type="button"
-          disabled={busy || !pageId.trim()}
-          style={controlButtonStyle(busy || !pageId.trim())}
-          onClick={() =>
-            run(
-              backfillConfluencePage({
-                companyId: host.companyId,
-                pageId,
-                includeChildren,
-                maxChildPages: 25,
-                maxCommentDepth: 10,
-              }),
-              "Confluence page backfill completed.",
-            )
-          }
-        >
-          Backfill Confluence page
-        </button>
-      </div>
-      <div>
-        <button
-          type="button"
-          disabled={busy}
-          style={controlButtonStyle(busy, "secondary")}
-          onClick={() =>
-            run(
-              reconcileActiveSurfaces({ companyId: host.companyId }),
-              "Active Atlassian surface reconciliation completed.",
-            )
-          }
-        >
-          Reconcile active surfaces
-        </button>
-      </div>
-      {message ? <p>{message}</p> : null}
+      <h2>Agent Sync Contract</h2>
+      <p>
+        The plugin stores the canonical Jira, JPD, Confluence, child-page, and
+        comment graph. The intake monitor owns Atlassian API reads with its
+        normal agent credentials.
+      </p>
+      <p>
+        On each heartbeat the agent should register artifacts, edges, comment
+        surfaces, lifecycle, footer comments, inline comments, nested replies,
+        and source events through this plugin before routing or clearing work.
+      </p>
     </section>
   );
 }
@@ -604,7 +459,7 @@ export function AtlassianIntakePage() {
     <main style={pageStyle}>
       <h1>Atlassian Source Intake</h1>
       <StatusSummary />
-      <BackfillControls />
+      <AgentSyncContract />
       <TrackedArtifacts />
       <CoverageGaps />
       <RecentEvents />
@@ -623,8 +478,8 @@ export function SettingsPage() {
     <main style={{ maxWidth: 760, padding: 24 }}>
       <h1>Atlassian Intake Settings</h1>
       <p>
-        Configure Jira and Confluence credentials in the plugin instance
-        settings, then reconcile managed Paperclip resources for each company.
+        Configure Jira and Confluence scope in plugin instance settings.
+        Atlassian credentials stay with the agents that synchronize this graph.
       </p>
       <button
         type="button"

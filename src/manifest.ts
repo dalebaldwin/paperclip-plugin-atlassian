@@ -3,7 +3,7 @@ import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
 const manifest: PaperclipPluginManifestV1 = {
   id: "paperclip.atlassian-source-intake",
   apiVersion: 1,
-  version: "0.1.13",
+  version: "0.1.14",
   displayName: "Atlassian Source Intake",
   description:
     "Builds a canonical Jira/Confluence artifact graph and routes new source comments into Paperclip.",
@@ -15,9 +15,6 @@ const manifest: PaperclipPluginManifestV1 = {
     "database.namespace.migrate",
     "database.namespace.read",
     "database.namespace.write",
-    "http.outbound",
-    "secrets.read-ref",
-    "jobs.schedule",
     "webhooks.receive",
     "issues.read",
     "issues.create",
@@ -50,18 +47,6 @@ const manifest: PaperclipPluginManifestV1 = {
         type: "string",
         title: "Confluence base URL",
         description: "Example: https://example.atlassian.net/wiki",
-      },
-      jiraEmailSecretRef: {
-        type: "string",
-        title: "Jira email secret ref",
-      },
-      jiraApiTokenSecretRef: {
-        type: "string",
-        title: "Jira API token secret ref",
-      },
-      webhookSecretRef: {
-        type: "string",
-        title: "Webhook verification secret ref",
       },
       projectKeys: {
         type: "array",
@@ -101,22 +86,7 @@ const manifest: PaperclipPluginManifestV1 = {
       description: "Receives Confluence page and comment webhook events.",
     },
   ],
-  jobs: [
-    {
-      jobKey: "hourly-reconcile",
-      displayName: "Hourly Atlassian reconciliation",
-      description:
-        "Reconciles active Jira/Confluence artifact comments and replies.",
-      schedule: "0 * * * *",
-    },
-    {
-      jobKey: "daily-deep-scan",
-      displayName: "Daily Atlassian deep scan",
-      description:
-        "Audits artifact graph coverage, child pages, and missed comment surfaces.",
-      schedule: "17 3 * * *",
-    },
-  ],
+  jobs: [],
   apiRoutes: [
     {
       routeKey: "status",
@@ -199,30 +169,6 @@ const manifest: PaperclipPluginManifestV1 = {
       companyResolution: { from: "body", key: "companyId" },
     },
     {
-      routeKey: "backfill-jira-issue",
-      method: "POST",
-      path: "/backfill/jira-issue",
-      auth: "board-or-agent",
-      capability: "api.routes.register",
-      companyResolution: { from: "body", key: "companyId" },
-    },
-    {
-      routeKey: "backfill-confluence-page",
-      method: "POST",
-      path: "/backfill/confluence-page",
-      auth: "board-or-agent",
-      capability: "api.routes.register",
-      companyResolution: { from: "body", key: "companyId" },
-    },
-    {
-      routeKey: "reconcile-active-surfaces",
-      method: "POST",
-      path: "/reconcile/active-surfaces",
-      auth: "board-or-agent",
-      capability: "api.routes.register",
-      companyResolution: { from: "body", key: "companyId" },
-    },
-    {
       routeKey: "coverage-audit",
       method: "GET",
       path: "/coverage-audit",
@@ -247,11 +193,11 @@ const manifest: PaperclipPluginManifestV1 = {
       role: "operations",
       title: "Atlassian Intake Monitor",
       capabilities:
-        "Reviews Atlassian source-comment events, routes actionable feedback, and audits missed Jira/Confluence comment surfaces.",
+        "Uses agent-owned Atlassian credentials to discover Jira/JPD/Confluence comments, writes normalized source events into the plugin graph, routes actionable feedback, and audits missed comment surfaces.",
       adapterPreference: ["codex_local", "claude_local", "process"],
       instructions: {
         content:
-          "You monitor normalized Jira and Confluence source-comment events created by the Atlassian Source Intake plugin. Do not crawl Atlassian independently unless the plugin asks for a reconciliation check. Route actionable events to the correct Paperclip owner and preserve source comment ids.",
+          "You own Atlassian source synchronization for this plugin. On each heartbeat, use your normal Atlassian credentials to scan configured Jira/JPD issues, Confluence pages, child pages, footer comments, inline comments, and nested replies. Register artifacts, surfaces, lifecycle, and normalized source-comment events through the Atlassian Source Intake plugin APIs, then route actionable events to the correct Paperclip owner while preserving source comment ids.",
       },
     },
   ],
@@ -260,7 +206,7 @@ const manifest: PaperclipPluginManifestV1 = {
       routineKey: "hourly-atlassian-comment-reconciliation",
       title: "Hourly Atlassian comment reconciliation",
       description:
-        "Review plugin-detected Jira and Confluence source-comment events and route any missed actionable feedback.",
+        "Synchronize Jira/JPD/Confluence source-comment surfaces into the plugin graph, then route missed actionable feedback.",
       assigneeRef: {
         resourceKind: "agent",
         resourceKey: "atlassian-intake-monitor",
