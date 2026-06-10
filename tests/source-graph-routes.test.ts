@@ -11,6 +11,13 @@ describe("source graph routes", () => {
     expect(routes.get("tracked-artifacts")).toBe("/tracked-artifacts");
     expect(routes.get("source-events")).toBe("/events");
     expect(routes.get("set-event-status")).toBe("/event-status");
+    expect(routes.get("backfill-jira-issue")).toBe("/backfill/jira-issue");
+    expect(routes.get("backfill-confluence-page")).toBe(
+      "/backfill/confluence-page",
+    );
+    expect(routes.get("reconcile-active-surfaces")).toBe(
+      "/reconcile/active-surfaces",
+    );
   });
 
   it("exposes the source graph page through the sidebar", () => {

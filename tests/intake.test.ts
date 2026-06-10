@@ -5,6 +5,7 @@ import {
   parseAtlassianWebhook,
   stableHash,
 } from "../src/intake.js";
+import { extractText } from "../src/backfill.js";
 
 describe("source comment intake", () => {
   it("normalizes top-level Jira comments", () => {
@@ -65,5 +66,26 @@ describe("source comment intake", () => {
       eventType: "comment_created",
       webhookEventId: "event-1",
     });
+  });
+
+  it("extracts comment text from Atlassian document bodies", () => {
+    expect(
+      extractText({
+        content: [
+          {
+            content: [
+              { text: "Please" },
+              { text: " pick this up" },
+            ],
+          },
+        ],
+      }),
+    ).toBe("Please pick this up");
+
+    expect(
+      extractText({
+        storage: { value: "<p>Inline reply <strong>needed</strong></p>" },
+      }),
+    ).toBe("Inline reply needed");
   });
 });
