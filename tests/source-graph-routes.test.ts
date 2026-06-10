@@ -12,4 +12,20 @@ describe("source graph routes", () => {
     expect(routes.get("source-events")).toBe("/events");
     expect(routes.get("set-event-status")).toBe("/event-status");
   });
+
+  it("exposes the source graph page through the sidebar", () => {
+    const launcher = manifest.ui?.launchers?.find(
+      (entry) => entry.id === "atlassian-intake-sidebar",
+    );
+
+    expect(manifest.capabilities).toContain("ui.sidebar.register");
+    expect(launcher).toMatchObject({
+      displayName: "Atlassian Intake",
+      placementZone: "sidebar",
+      action: {
+        type: "navigate",
+        target: "atlassian-intake",
+      },
+    });
+  });
 });
