@@ -3,7 +3,7 @@ import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
 const manifest: PaperclipPluginManifestV1 = {
   id: "paperclip.atlassian-source-intake",
   apiVersion: 1,
-  version: "0.1.7",
+  version: "0.1.8",
   displayName: "Atlassian Source Intake",
   description:
     "Builds a canonical Jira/Confluence artifact graph and routes new source comments into Paperclip.",
@@ -171,6 +171,30 @@ const manifest: PaperclipPluginManifestV1 = {
       auth: "board-or-agent",
       capability: "api.routes.register",
       companyResolution: { from: "query", key: "companyId" },
+    },
+    {
+      routeKey: "tracked-artifacts",
+      method: "GET",
+      path: "/tracked-artifacts",
+      auth: "board-or-agent",
+      capability: "api.routes.register",
+      companyResolution: { from: "query", key: "companyId" },
+    },
+    {
+      routeKey: "source-events",
+      method: "GET",
+      path: "/events",
+      auth: "board-or-agent",
+      capability: "api.routes.register",
+      companyResolution: { from: "query", key: "companyId" },
+    },
+    {
+      routeKey: "set-event-status",
+      method: "POST",
+      path: "/event-status",
+      auth: "board-or-agent",
+      capability: "api.routes.register",
+      companyResolution: { from: "body", key: "companyId" },
     },
     {
       routeKey: "coverage-audit",
