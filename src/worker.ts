@@ -12,12 +12,6 @@ import {
   stringField,
 } from "./intake.js";
 import {
-  backfillConfluencePage,
-  backfillJiraIssue,
-  type BackfillConfluencePageInput,
-  type BackfillJiraIssueInput,
-} from "./backfill.js";
-import {
   expectedSurfacesForArtifact,
   normalizeArtifactInput,
   normalizeEdgeInput,
@@ -914,59 +908,6 @@ async function intakeStatus(ctx: PluginContext, companyId?: string | null) {
   };
 }
 
-async function reconcileActiveAtlassianSurfaces(ctx: PluginContext) {
-  const companies = await ctx.companies.list({ limit: 100 });
-  let scannedArtifacts = 0;
-  let recordedEvents = 0;
-  for (const company of companies) {
-    const companyId = company.id;
-    const surfaces = await listActiveSurfaces(ctx, { companyId });
-    const jiraIssueKeys = new Set<string>();
-    const confluencePageIds = new Set<string>();
-    for (const surface of surfaces) {
-      if (surface.source === "jira" || surface.artifact_kind === "jira_issue") {
-        jiraIssueKeys.add(surface.external_id);
-      }
-      if (surface.source === "confluence" || surface.artifact_kind === "confluence_page") {
-        confluencePageIds.add(surface.external_id);
-      }
-    }
-    for (const issueKey of Array.from(jiraIssueKeys).slice(0, 25)) {
-      try {
-        const result = await backfillJiraIssue(ctx, { companyId, issueKey }, (event) =>
-          recordCommentEvent(ctx, event),
-        );
-        scannedArtifacts += 1;
-        recordedEvents += result.recordedEvents;
-      } catch (error) {
-        ctx.logger.warn("Atlassian Jira reconciliation failed", {
-          companyId,
-          issueKey,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-    for (const pageId of Array.from(confluencePageIds).slice(0, 25)) {
-      try {
-        const result = await backfillConfluencePage(
-          ctx,
-          { companyId, pageId, includeChildren: true, maxChildPages: 10 },
-          (event) => recordCommentEvent(ctx, event),
-        );
-        scannedArtifacts += 1;
-        recordedEvents += result.recordedEvents;
-      } catch (error) {
-        ctx.logger.warn("Atlassian Confluence reconciliation failed", {
-          companyId,
-          pageId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-  }
-  return { scannedArtifacts, recordedEvents };
-}
-
 const plugin = definePlugin({
   async setup(ctx) {
     setupContext = ctx;
@@ -1031,26 +972,6 @@ const plugin = definePlugin({
       );
     });
 
-    ctx.actions.register("backfill-jira-issue", async (params) => {
-      return backfillJiraIssue(
-        ctx,
-        params as unknown as BackfillJiraIssueInput,
-        (event) => recordCommentEvent(ctx, event),
-      );
-    });
-
-    ctx.actions.register("backfill-confluence-page", async (params) => {
-      return backfillConfluencePage(
-        ctx,
-        params as unknown as BackfillConfluencePageInput,
-        (event) => recordCommentEvent(ctx, event),
-      );
-    });
-
-    ctx.actions.register("reconcile-active-surfaces", async () => {
-      return reconcileActiveAtlassianSurfaces(ctx);
-    });
-
     ctx.data.register("active-surfaces", async (params) => {
       return listActiveSurfaces(
         ctx,
@@ -1084,20 +1005,6 @@ const plugin = definePlugin({
       return intakeStatus(ctx, stringField(params.companyId));
     });
 
-    ctx.jobs.register("hourly-reconcile", async (job) => {
-      const result = await reconcileActiveAtlassianSurfaces(ctx);
-      ctx.logger.info("Atlassian hourly reconciliation job completed", {
-        runId: job.runId,
-        ...result,
-      });
-    });
-
-    ctx.jobs.register("daily-deep-scan", async (job) => {
-      ctx.logger.info("Atlassian daily deep scan job fired", {
-        runId: job.runId,
-        status: "coverage-audit-pending",
-      });
-    });
   },
 
   async onApiRequest(input: PluginApiRequestInput) {
@@ -1214,38 +1121,6 @@ const plugin = definePlugin({
           currentContext(),
           input.body as unknown as SetSourceCommentEventStatusInput,
         ),
-      };
-    }
-
-    if (input.routeKey === "backfill-jira-issue") {
-      if (!isRecord(input.body)) {
-        return { status: 400, body: { error: "JSON object body required" } };
-      }
-      return {
-        body: await backfillJiraIssue(
-          currentContext(),
-          input.body as unknown as BackfillJiraIssueInput,
-          (event) => recordCommentEvent(currentContext(), event),
-        ),
-      };
-    }
-
-    if (input.routeKey === "backfill-confluence-page") {
-      if (!isRecord(input.body)) {
-        return { status: 400, body: { error: "JSON object body required" } };
-      }
-      return {
-        body: await backfillConfluencePage(
-          currentContext(),
-          input.body as unknown as BackfillConfluencePageInput,
-          (event) => recordCommentEvent(currentContext(), event),
-        ),
-      };
-    }
-
-    if (input.routeKey === "reconcile-active-surfaces") {
-      return {
-        body: await reconcileActiveAtlassianSurfaces(currentContext()),
       };
     }
 
