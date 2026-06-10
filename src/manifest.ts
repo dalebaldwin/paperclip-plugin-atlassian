@@ -3,7 +3,7 @@ import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
 const manifest: PaperclipPluginManifestV1 = {
   id: "paperclip.atlassian-source-intake",
   apiVersion: 1,
-  version: "0.1.10",
+  version: "0.1.11",
   displayName: "Atlassian Source Intake",
   description:
     "Builds a canonical Jira/Confluence artifact graph and routes new source comments into Paperclip.",
@@ -307,21 +307,16 @@ const manifest: PaperclipPluginManifestV1 = {
         routePath: "atlassian-intake",
       },
       {
+        type: "sidebar",
+        id: "atlassian-intake-sidebar",
+        displayName: "Atlassian Intake",
+        exportName: "AtlassianSidebarLink",
+      },
+      {
         type: "settingsPage",
         id: "settings",
         displayName: "Atlassian Intake",
         exportName: "SettingsPage",
-      },
-    ],
-    launchers: [
-      {
-        id: "atlassian-intake-sidebar",
-        displayName: "Atlassian Intake",
-        placementZone: "sidebar",
-        action: {
-          type: "navigate",
-          target: "atlassian-intake",
-        },
       },
     ],
   },
